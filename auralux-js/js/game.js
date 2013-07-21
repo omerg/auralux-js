@@ -2,12 +2,12 @@
 function Planet(x,y, big, human) {
 	this.x = x;
 	this.y = y;
-	this.monsters = new Array();
+	this.units = new Array();
 	this.isBig = big;
 	this.isHuman = human;
-	this.produceMonster = function() {
+	this.produceUnit = function() {
 			
-		//calculate random radius of monster position
+		//calculate random radius of unit position
 		var hyp = 30 - 15 * Math.random();
 		var sine = 1 - 2 * Math.random();				
 		var x =  hyp * sine;
@@ -18,17 +18,19 @@ function Planet(x,y, big, human) {
 			y = y * -1;
 		};
 		
-		//add monster
-		this.monsters.push(new Monster(this.x + x, this.y + y, false));
+		//add unit
+		this.units.push(new Unit(this.x + x, this.y + y, false));
 		
-		console.log("monster produced");
+		console.log("unit produced");
 	};
 }
 
-//monster object
-function Monster(x, y, selected) {
+//Unit object
+function Unit(x, y, selected) {
 	this.x = x;
 	this.y = y;
+	this.destX;
+	this.destY;
 	this.selected = selected;
 }
 
@@ -53,10 +55,10 @@ var main = {
 		);
 		console.log("planets initialized");
 	},
-	produceMonsters : function() {
+	produceUnits : function() {
 		//draw planet
 		for (i in main.planets) {
-			main.planets[i].produceMonster();
+			main.planets[i].produceUnit();
 		}
 	},
 	drawPlanet : function(Planet) {
@@ -72,7 +74,7 @@ var main = {
 		
 		//set color
 		var strokeColor = "#003300";
-		var fillColor = "magenta";
+		var fillColor = "orange";
 		if (Planet.isHuman) {
 			strokeColor = "#000033";
 			fillColor = "green";
@@ -110,20 +112,72 @@ var main = {
 		if (humanReady) {		
 			//draw planet
 			for (i in this.planets) {
-				this.context.drawImage(humanImage, this.planets[i].x, this.planets[i].y);
 				this.drawPlanet(this.planets[i]);
 			}
 		}
 
 		if (monsterReady && humanReady) {
 			
-			//draw monsters
+			//draw monsters & humans
 			for (i in this.planets) {
-				for (k in this.planets[i].monsters) {				    
-					this.context.drawImage(monsterImage, 
-						this.planets[i].monsters[k].x, 
-						this.planets[i].monsters[k].y 
+				
+				//choose image, monster or human
+				var image = monsterImage;
+				if (this.planets[i].isHuman) {
+					image = humanImage;
+				}
+				
+				for (k in this.planets[i].units) {	
+					
+					var thisUnit = this.planets[i].units[k];
+					
+					//move if destination coordinates exist
+					if (thisUnit.finalX !== undefined) {
+						
+						var diffX = thisUnit.finalX - thisUnit.x;
+						var diffY = thisUnit.finalY - thisUnit.y;
+						
+						var tanX = Math.abs(diffX /diffY);
+						if (tanX > 2) {
+							tanX = 2;
+						} else if (isNaN(tanX)){
+							tanX = 1;
+						}
+						
+						//move on x plane
+						if (diffX > 30 * Math.random()) {
+							thisUnit.x += Math.random() * tanX;
+						} else if (diffX < -30 * Math.random()) {
+							thisUnit.x -= Math.random() * tanX;
+						} else {
+							//destination reached in x plane
+							thisUnit.finalX = undefined;
+						}
+						
+						//move on y plane
+						if (diffY > 30 * Math.random()) {
+							thisUnit.y += 2 * Math.random();
+						} else if (diffY < -30 * Math.random()) {
+							thisUnit.y -= 2 * Math.random();
+						} else {
+							//destination reached in y plane
+							thisUnit.finalY = undefined;
+						}
+						
+					}
+					this.context.drawImage(image, 
+						thisUnit.x, 
+						thisUnit.y 
 					);
+					
+					//circle red if selected
+					if (thisUnit.selected) {	
+						this.context.beginPath();
+						this.context.arc(thisUnit.x + 4, thisUnit.y + 4, 8, 0, 2 * Math.PI, false);
+						this.context.lineWidth = 2;
+						this.context.strokeStyle = "red";
+						this.context.stroke();
+					}
 				}
 			}
 		}
@@ -138,8 +192,35 @@ var main = {
 		this.context.textBaseline = "top";
 		this.context.fillText("Goblins caught: " + monstersCaught, 32, 32);
 	},
-	markSeleted : function() {
+	markSelected : function(point) {
 		
+		//internal function checks if intersects
+		var intersects = function(x, y, cx, cy, r) {
+		    var dx = x-cx;
+		    var dy = y-cy;
+		    return dx*dx+dy*dy <= r*r;
+		};
+		
+		for (i in this.planets) {	
+			
+			//can select only humans
+			if (!this.planets[i].isHuman) {
+				return;
+			}
+			
+			//check if intersects with selection
+			for (k in this.planets[i].units) {	
+				var thisUnit = this.planets[i].units[k];
+				if (intersects(
+						thisUnit.x,
+						thisUnit.y,
+						point.initX,
+						point.initY,
+						point.radius)) {
+					thisUnit.selected = true;					
+				}
+			}
+		}
 	}
 };
 
@@ -185,20 +266,22 @@ var mouseDown = {
 };
 
 addEventListener("mouseup", function (e) {
+		
+	//calculate selected Units;
+	main.markSelected(mouseDown);
+	
+	//reset mouse click data
 	mouseDown.initX = undefined;
 	mouseDown.initY = undefined;
 	mouseDown.finalX = undefined;
 	mouseDown.finalY = undefined;
 	mouseDown.radius = undefined;
 	
-	//calculate selected monsters;
-	main.markSelected();
-	
 	main.render();
 }, false);
 
 addEventListener("mousemove", function (e) {
-	
+		
 	if (mouseDown.initX == undefined ||
 		mouseDown.initY == undefined) {
 		return;
@@ -221,8 +304,26 @@ addEventListener("mousemove", function (e) {
 
 
 addEventListener("mousedown", function (e) {
+	
+	//resetSelected
+	for (i in main.planets) {		
+		for (k in main.planets[i].units) {	
+			var thisUnit = main.planets[i].units[k];
+			
+			if (thisUnit.selected) {
+				//set target
+				thisUnit.finalX = e.x;
+				thisUnit.finalY = e.y;
+			} 
+			thisUnit.selected = false;					
+		}
+	}
+	
 	mouseDown.initX = e.x;
 	mouseDown.initY = e.y;
+		
+	main.render();
+	
 }, false);
 
 // Reset the game when the player catches a monster
@@ -250,10 +351,17 @@ var update = function (modifier) {
 	}
 };
 
+var wait = 0;
+
 // The main game loop
 var loop = function () {
 	
-	main.produceMonsters();
+	wait++;
+	if (wait == 50) {
+		main.produceUnits();
+		wait = 0;
+	}
+	
 	
 	var now = Date.now();
 	var delta = now - then;
@@ -268,4 +376,4 @@ var loop = function () {
 var then = Date.now();
 main.init();
 
-setInterval(loop, 1000); // Execute as fast as possible
+setInterval(loop, 10); // Execute as fast as possible
